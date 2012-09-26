@@ -1,24 +1,27 @@
 # Wax::Leaflet::Rails
 
-TODO: Write a gem description
+The wax.leaf.js and leaflet.js assets for the Rails asset pipeline.
 
 ## Installation
 
 Add this line to your application's Gemfile:
 
-    gem 'wax-leaflet-rails'
+    gem 'wax-leaflet-rails', :git => 'https://github.com/bshelton229/wax-leaflet-rails.git'
 
 And then execute:
 
     $ bundle
 
-Or install it yourself as:
-
-    $ gem install wax-leaflet-rails
-
 ## Usage
 
-TODO: Write usage instructions here
+    //=require wax-leaflet.js
+
+  The leaflet ie conditional stylesheet is set to be pre-compiled by the gem. You can
+  include leaflet.ie.css in a conditional statement in your layout.
+
+    <!--[if lt IE 8]>
+      <%= stylesheet_link_tag 'leaflet.ie.css', :media => "all" %>
+    <![endif]-->
 
 ## Contributing
 
