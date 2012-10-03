@@ -19,9 +19,16 @@ And then execute:
   The leaflet ie conditional stylesheet is set to be pre-compiled by the gem. You can
   include leaflet.ie.css in a conditional statement in your layout.
 
+### Erb
+
     <!--[if lt IE 8]>
       <%= stylesheet_link_tag 'leaflet.ie.css', :media => "all" %>
     <![endif]-->
+
+### Haml
+
+    /[if lt IE 8]
+      =stylesheet_link_tag 'leaflet.ie.css', :media => "all"
 
 ## Contributing
 
