@@ -1,4 +1,4 @@
-/* wax - 6.4.0 - v6.0.4-28-g4d63117 */
+/* wax - 7.0.0dev11 - v6.0.4-113-g6b1c56c */
 
 
 !function (name, context, definition) {
@@ -2030,27 +2030,14 @@ var Mustache = (typeof module !== "undefined" && module.exports) || {};
 // Attribution
 // -----------
 wax.attribution = function() {
-    var container,
-        a = {};
+    var a = {};
 
-    function urlX(url) {
-        // Data URIs are subject to a bug in Firefox
-        // https://bugzilla.mozilla.org/show_bug.cgi?id=255107
-        // which let them be a vector. But WebKit does 'the right thing'
-        // or at least 'something' about this situation, so we'll tolerate
-        // them.
-        if (/^(https?:\/\/|data:image)/.test(url)) {
-            return url;
-        }
-    }
-
-    function idX(id) {
-        return id;
-    }
+    var container = document.createElement('div');
+    container.className = 'map-attribution';
 
     a.content = function(x) {
         if (typeof x === 'undefined') return container.innerHTML;
-        container.innerHTML = html_sanitize(x, urlX, idX);
+        container.innerHTML = wax.u.sanitize(x);
         return this;
     };
 
@@ -2059,12 +2046,10 @@ wax.attribution = function() {
     };
 
     a.init = function() {
-        container = document.createElement('div');
-        container.className = 'wax-attribution';
         return this;
     };
 
-    return a.init();
+    return a;
 };
 wax = wax || {};
 
@@ -2155,21 +2140,11 @@ wax.formatter = function(x) {
         f = function() {};
     }
 
-    function urlX(url) {
-        if (/^(https?:\/\/|data:image)/.test(url)) {
-            return url;
-        }
-    }
-
-    function idX(id) {
-        return id;
-    }
-
     // Wrap the given formatter function in order to
     // catch exceptions that it may throw.
     formatter.format = function(options, data) {
         try {
-            return html_sanitize(f(options, data), urlX, idX);
+            return wax.u.sanitize(f(options, data));
         } catch (e) {
             if (console) console.log(e);
         }
@@ -2264,7 +2239,9 @@ wax.gm = function() {
         formatter;
 
     var gridUrl = function(url) {
-        return url.replace(/(\.png|\.jpg|\.jpeg)(\d*)/, '.grid.json');
+        if (url) {
+            return url.replace(/(\.png|\.jpg|\.jpeg)(\d*)/, '.grid.json');
+        }
     };
 
     function templatedGridUrl(template) {
@@ -2294,9 +2271,16 @@ wax.gm = function() {
     };
 
     manager.gridUrl = function(x) {
+        // Getter-setter
         if (!arguments.length) return gridUrl;
-        gridUrl = typeof x === 'function' ?
-            x : templatedGridUrl(x);
+
+        // Handle tilesets that don't support grids
+        if (!x) {
+            gridUrl = function() { return null; };
+        } else {
+            gridUrl = typeof x === 'function' ?
+                x : templatedGridUrl(x);
+        }
         return manager;
     };
 
@@ -2322,9 +2306,10 @@ wax.gm = function() {
         } else if (x.formatter) {
             manager.formatter(x.formatter);
         } else {
+            // In this case, we cannot support grids
             formatter = undefined;
         }
-        if (x.grids) manager.gridUrl(x.grids);
+        manager.gridUrl(x.grids);
         if (x.resolution) resolution = x.resolution;
         tilejson = x;
         return manager;
@@ -2339,6 +2324,10 @@ wax = wax || {};
 wax.hash = function(options) {
     options = options || {};
 
+    var s0, // old hash
+        hash = {},
+        lat = 90 - 1e-8;  // allowable latitude range
+
     function getState() {
         return location.hash.substring(1);
     }
@@ -2347,10 +2336,6 @@ wax.hash = function(options) {
         var l = window.location;
         l.replace(l.toString().replace((l.hash || /$/), '#' + state));
     }
-
-    var s0, // old hash
-        hash = {},
-        lat = 90 - 1e-8;  // allowable latitude range
 
     function parseHash(s) {
         var args = s.split('/');
@@ -2389,15 +2374,15 @@ wax.hash = function(options) {
     hash.add = function() {
         stateChange(getState());
         options.bindChange(_move);
-        return this;
+        return hash;
     };
 
     hash.remove = function() {
         options.unbindChange(_move);
-        return this;
+        return hash;
     };
 
-    return hash.add();
+    return hash;
 };
 wax = wax || {};
 
@@ -2491,6 +2476,7 @@ wax.interaction = function() {
         _d = wax.u.eventoffset(e);
         if (e.type === 'mousedown') {
             bean.add(document.body, 'click', onUp);
+            bean.add(document.body, 'mouseup', onUp);
 
         // Only track single-touches. Double-touches will not affect this
         // control
@@ -2498,12 +2484,12 @@ wax.interaction = function() {
             // Don't make the user click close if they hit another tooltip
             bean.fire(interaction, 'off');
             // Touch moves invalidate touches
-            bean.add(parent(), touchEnds);
+            bean.add(e.srcElement, touchEnds);
         }
     }
 
-    function touchCancel() {
-        bean.remove(parent(), touchEnds);
+    function touchCancel(e) {
+        bean.remove(e.srcElement, touchEnds);
         _downLock = false;
     }
 
@@ -2518,7 +2504,7 @@ wax.interaction = function() {
         }
 
         bean.remove(document.body, 'mouseup', onUp);
-        bean.remove(parent(), touchEnds);
+        bean.remove(e.srcElement, touchEnds);
 
         if (e.type === 'touchend') {
             // If this was a touch and it survived, there's no need to avoid a double-tap
@@ -2650,43 +2636,28 @@ wax.legend = function() {
         legend = {},
         container;
 
-    function urlX(url) {
-        // Data URIs are subject to a bug in Firefox
-        // https://bugzilla.mozilla.org/show_bug.cgi?id=255107
-        // which let them be a vector. But WebKit does 'the right thing'
-        // or at least 'something' about this situation, so we'll tolerate
-        // them.
-        if (/^(https?:\/\/|data:image)/.test(url)) {
-            return url;
-        }
-    }
-
-    function idX(id) {
-        return id;
-    }
-
     legend.element = function() {
         return container;
     };
 
     legend.content = function(content) {
         if (!arguments.length) return element.innerHTML;
-        if (content) {
-            element.innerHTML = html_sanitize(content, urlX, idX);
-            element.style.display = 'block';
-        } else {
-            element.innerHTML = '';
+
+        element.innerHTML = wax.u.sanitize(content);
+        element.style.display = 'block';
+        if (element.innerHTML === '') {
             element.style.display = 'none';
         }
+
         return legend;
     };
 
     legend.add = function() {
         container = document.createElement('div');
-        container.className = 'wax-legends';
+        container.className = 'map-legends wax-legends';
 
         element = container.appendChild(document.createElement('div'));
-        element.className = 'wax-legend';
+        element.className = 'map-legend wax-legend';
         element.style.display = 'none';
         return legend;
     };
@@ -2700,13 +2671,12 @@ wax.location = function() {
     var t = {};
 
     function on(o) {
-        console.log(o);
         if ((o.e.type === 'mousemove' || !o.e.type)) {
             return;
         } else {
             var loc = o.formatter({ format: 'location' }, o.data);
             if (loc) {
-                window.location.href = loc;
+                window.top.location.href = loc;
             }
         }
     }
@@ -2756,7 +2726,7 @@ wax.movetip = function() {
     // Hide any tooltips on layers underneath this one.
     function getTooltip(feature) {
         var tooltip = document.createElement('div');
-        tooltip.className = 'wax-tooltip wax-tooltip-0';
+        tooltip.className = 'map-tooltip map-tooltip-0';
         tooltip.innerHTML = feature;
         return tooltip;
     }
@@ -2783,7 +2753,7 @@ wax.movetip = function() {
             if (!content) return;
             hide();
             var tt = document.body.appendChild(getTooltip(content));
-            tt.className += ' wax-popup';
+            tt.className += ' map-popup';
 
             var close = tt.appendChild(document.createElement('a'));
             close.href = '#close';
@@ -2886,21 +2856,6 @@ wax.request = {
 wax.template = function(x) {
     var template = {};
 
-    function urlX(url) {
-        // Data URIs are subject to a bug in Firefox
-        // https://bugzilla.mozilla.org/show_bug.cgi?id=255107
-        // which let them be a vector. But WebKit does 'the right thing'
-        // or at least 'something' about this situation, so we'll tolerate
-        // them.
-        if (/^(https?:\/\/|data:image)/.test(url)) {
-            return url;
-        }
-    }
-
-    function idX(id) {
-        return id;
-    }
-
     // Clone the data object such that the '__[format]__' key is only
     // set for this instance of templating.
     template.format = function(options, data) {
@@ -2911,7 +2866,7 @@ wax.template = function(x) {
         if (options.format) {
             clone['__' + options.format + '__'] = true;
         }
-        return html_sanitize(Mustache.to_html(x, clone), urlX, idX);
+        return wax.u.sanitize(Mustache.to_html(x, clone));
     };
 
     return template;
@@ -2950,12 +2905,11 @@ wax.tooltip = function() {
     // Hide any tooltips on layers underneath this one.
     function getTooltip(feature) {
         var tooltip = document.createElement('div');
-        tooltip.className = 'wax-tooltip wax-tooltip-0';
+        tooltip.className = 'map-tooltip map-tooltip-0 wax-tooltip';
         tooltip.innerHTML = feature;
         return tooltip;
     }
 
-    
     function remove() {
         if (this.parentNode) this.parentNode.removeChild(this);
     }
@@ -2968,7 +2922,7 @@ wax.tooltip = function() {
                 // This code assumes that transform-supporting browsers
                 // also support proper events. IE9 does both.
                   bean.add(_ct, transitionEvent, remove);
-                  _ct.className += ' wax-fade';
+                  _ct.className += ' map-fade';
             } else {
                 if (_ct.parentNode) _ct.parentNode.removeChild(_ct);
             }
@@ -2999,7 +2953,7 @@ wax.tooltip = function() {
             hide();
             parent.style.cursor = 'pointer';
             var tt = parent.appendChild(getTooltip(content));
-            tt.className += ' wax-popup';
+            tt.className += ' map-popup wax-popup';
 
             var close = tt.appendChild(document.createElement('a'));
             close.href = '#close';
@@ -3077,6 +3031,7 @@ wax.u = {
                 el.style.msTransform;
 
             if (style) {
+                var match;
                 if (match = style.match(/translate\((.+)px, (.+)px\)/)) {
                     top += parseInt(match[2], 10);
                     left += parseInt(match[1], 10);
@@ -3094,12 +3049,26 @@ wax.u = {
             }
         };
 
-        calculateOffset(el);
+        // from jquery, offset.js
+        if ( typeof el.getBoundingClientRect !== "undefined" ) {
+          var body = document.body;
+          var doc = el.ownerDocument.documentElement;
+          var clientTop  = document.clientTop  || body.clientTop  || 0;
+          var clientLeft = document.clientLeft || body.clientLeft || 0;
+          var scrollTop  = window.pageYOffset || doc.scrollTop;
+          var scrollLeft = window.pageXOffset || doc.scrollLeft;
 
-        try {
-            while (el = el.offsetParent) { calculateOffset(el); }
-        } catch(e) {
-            // Hello, internet explorer.
+          var box = el.getBoundingClientRect();
+          top = box.top + scrollTop  - clientTop;
+          left = box.left + scrollLeft - clientLeft;
+
+        } else {
+          calculateOffset(el);
+          try {
+              while (el = el.offsetParent) { calculateOffset(el); }
+          } catch(e) {
+              // Hello, internet explorer.
+          }
         }
 
         // Offsets from the body
@@ -3135,16 +3104,6 @@ wax.u = {
             x;
     },
 
-    // IE doesn't have indexOf
-    indexOf: function(array, item) {
-        var nativeIndexOf = Array.prototype.indexOf;
-        if (array === null) return -1;
-        var i, l;
-        if (nativeIndexOf && array.indexOf === nativeIndexOf) return array.indexOf(item);
-        for (i = 0, l = array.length; i < l; i++) if (array[i] === item) return i;
-        return -1;
-    },
-
     // From quirksmode: normalize the offset of an event from the top-left
     // of the page.
     eventoffset: function(e) {
@@ -3159,15 +3118,9 @@ wax.u = {
             };
         } else if (e.clientX || e.clientY) {
             // Internet Explorer
-            var doc = document.documentElement, body = document.body;
-            var htmlComputed = document.body.parentNode.currentStyle;
-            var topMargin = parseInt(htmlComputed.marginTop, 10) || 0;
-            var leftMargin = parseInt(htmlComputed.marginLeft, 10) || 0;
             return {
-                x: e.clientX + (doc && doc.scrollLeft || body && body.scrollLeft || 0) -
-                    (doc && doc.clientLeft || body && body.clientLeft || 0) + leftMargin,
-                y: e.clientY + (doc && doc.scrollTop  || body && body.scrollTop  || 0) -
-                    (doc && doc.clientTop  || body && body.clientTop  || 0) + topMargin
+                x: e.clientX,
+                y: e.clientY
             };
         } else if (e.touches && e.touches.length === 1) {
             // Touch browsers
@@ -3197,6 +3150,25 @@ wax.u = {
     // during a given window of time.
     throttle: function(func, wait) {
         return this.limit(func, wait, false);
+    },
+
+    sanitize: function(content) {
+        if (!content) return '';
+
+        function urlX(url) {
+            // Data URIs are subject to a bug in Firefox
+            // https://bugzilla.mozilla.org/show_bug.cgi?id=255107
+            // which let them be a vector. But WebKit does 'the right thing'
+            // or at least 'something' about this situation, so we'll tolerate
+            // them.
+            if (/^(https?:\/\/|data:image)/.test(url)) {
+                return url;
+            }
+        }
+
+        function idX(id) { return id; }
+
+        return html_sanitize(content, urlX, idX);
     }
 };
 wax = wax || {};
